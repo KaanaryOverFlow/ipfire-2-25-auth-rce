@@ -1,4 +1,4 @@
-# Ipfire 2-25 authanticated rce
+# Ipfire 2-25 (core update 156) authenticated rce
 
 - system run command when install any packet
 ![packfileinstallation](https://user-images.githubusercontent.com/29048982/118332497-ddca6600-b512-11eb-800d-743975184dc6.png)
@@ -15,4 +15,4 @@
 
 ![version](https://user-images.githubusercontent.com/29048982/118335575-a1016d80-b518-11eb-961b-d51230f45b96.png)
 
-- we can run command as nobody after login
+- ipfire allows run arbitrary os command as nobody after login
