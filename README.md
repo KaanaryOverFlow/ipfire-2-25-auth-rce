@@ -11,4 +11,8 @@
 
 ![pocpc1](https://user-images.githubusercontent.com/29048982/118332771-4dd8ec00-b513-11eb-8931-39fb4e84c8e2.png)
 
+- version 2.25 - core update 156
+
+![version](https://user-images.githubusercontent.com/29048982/118335575-a1016d80-b518-11eb-961b-d51230f45b96.png)
+
 - we can run command as nobody after login
