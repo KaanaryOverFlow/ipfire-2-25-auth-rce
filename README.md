@@ -23,7 +23,7 @@
 
 ![find-suid](https://user-images.githubusercontent.com/29048982/118407493-aa5e1780-b689-11eb-86a9-1ded561508d2.png)
 
-- backup program run another script. /var/ipfire/backup/bin/backup/backup.pl (it is a bash script and permission is looky good)
+- backup program run another script. /var/ipfire/backup/bin/backup.pl (it is a bash script and permission is looky good)
 
 ![backup-tespiti](https://user-images.githubusercontent.com/29048982/118407546-ded1d380-b689-11eb-8f43-d30bcab0765e.png)
 
@@ -72,7 +72,7 @@ getbash:
   syscall
 ```
 
-- and write the new program to /var/ipfire/backup/bin/backup/backup.pl. (we can python http server and curl to write)
+- and write the new program to /var/ipfire/backup/bin/backup.pl. (we can python http server and curl to write)
 
 - and enjoy the root shell!
 
